@@ -54,6 +54,7 @@ int64_t FLTCMTimeToMillis(CMTime time) {
 @property(nonatomic,assign) float lastRate;
 @end
 
+static void* playbackRate = &playbackRate;
 static void* timeRangeContext = &timeRangeContext;
 static void* statusContext = &statusContext;
 static void* playbackLikelyToKeepUpContext = &playbackLikelyToKeepUpContext;
@@ -88,6 +89,10 @@ static void* playbackBufferFullContext = &playbackBufferFullContext;
             options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
             context:playbackBufferFullContext];
 
+    [_player addObserver:self
+              forKeyPath:@"rate"
+                 options:NSKeyValueObservingOptionNew
+                 context:playbackRate];
   // Add an observer that will respond to itemDidPlayToEndTime
   [[NSNotificationCenter defaultCenter] addObserver:self
                                            selector:@selector(itemDidPlayToEndTime:)
@@ -288,6 +293,16 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
     if (_eventSink != nil) {
       _eventSink(@{@"event" : @"bufferingEnd"});
     }
+  } else if (context == playbackRate) {
+      float rate = [change[NSKeyValueChangeNewKey] floatValue];
+      NSLog(@"_player.rate监听值变化. rate = %lf, lastrate = %lf",_player.rate,_lastRate);
+      if (_isPlaying && _player.rate != _lastRate) {
+          dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+              self.player.rate = self.lastRate;
+          });
+//          _player.rate = _lastRate;
+      }
+      
   }
 }
 
@@ -329,16 +344,20 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
 }
 
 - (void)play {
+//    NSLog(@"will play.  rate = %lf",_player.rate);
   _isPlaying = true;
   [self updatePlayingState];
   dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         self->_player.rate = self->_lastRate;
+//      NSLog(@"end play.  rate = %lf",_player.rate);
   });
 }
 
 - (void)pause {
+//    NSLog(@"will pause.  rate = %lf",_player.rate);
   _isPlaying = false;
   [self updatePlayingState];
+//    NSLog(@"end pause.  rate = %lf",_player.rate);
 }
 
 - (int64_t)position {
@@ -350,16 +369,18 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
 }
 
 - (void)seekTo:(int)location {
-  __weak typeof(self) weakSelf = self;
     [_player seekToTime:CMTimeMake(location, 1000)
         toleranceBefore:kCMTimeZero
          toleranceAfter:kCMTimeZero
       completionHandler:^(BOOL finished) {
-        __strong typeof(self) strongSelf = weakSelf;
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            strongSelf->_player.rate = strongSelf->_lastRate;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            if (self.isPlaying && self.player.rate != self.lastRate) {
+                self.player.rate = self.lastRate;
+            }
+//            NSLog(@"seekTo  end..rate = %lf",self->_player.rate);
         });
     }];
+//    NSLog(@"seekTo  start..rate = %lf",_player.rate);
 }
 
 - (void)setIsLooping:(bool)isLooping {
@@ -391,8 +412,9 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
     return;
   }
 
+    _lastRate = speed;
   _player.rate = speed;
-  _lastRate = speed;
+//    NSLog(@"setPlaybackSpeed: speed = %lf",speed);
 }
 
 - (CVPixelBufferRef)copyPixelBuffer {
@@ -447,6 +469,11 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
                              forKeyPath:@"playbackBufferFull"
                                 context:playbackBufferFullContext];
   [_player replaceCurrentItemWithPlayerItem:nil];
+    
+    [_player removeObserver:self
+                 forKeyPath:@"rate"
+                    context:playbackRate];
+    
   [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
