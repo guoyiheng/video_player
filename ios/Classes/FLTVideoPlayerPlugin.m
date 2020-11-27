@@ -51,6 +51,7 @@ int64_t FLTCMTimeToMillis(CMTime time) {
 - (void)pause;
 - (void)setIsLooping:(bool)isLooping;
 - (void)updatePlayingState;
+@property(nonatomic,assign) float lastRate;
 @end
 
 static void* timeRangeContext = &timeRangeContext;
@@ -330,6 +331,7 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
 - (void)play {
   _isPlaying = true;
   [self updatePlayingState];
+  _player.rate = _lastRate;
 }
 
 - (void)pause {
@@ -346,9 +348,16 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
 }
 
 - (void)seekTo:(int)location {
-  [_player seekToTime:CMTimeMake(location, 1000)
-      toleranceBefore:kCMTimeZero
-       toleranceAfter:kCMTimeZero];
+  __weak typeof(self) weakSelf = self;
+    [_player seekToTime:CMTimeMake(location, 1000)
+        toleranceBefore:kCMTimeZero
+         toleranceAfter:kCMTimeZero
+      completionHandler:^(BOOL finished) {
+        __strong typeof(self) strongSelf = weakSelf;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            strongSelf->_player.rate = strongSelf->_lastRate;
+        });
+    }];
 }
 
 - (void)setIsLooping:(bool)isLooping {
@@ -381,6 +390,7 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
   }
 
   _player.rate = speed;
+  _lastRate = speed;
 }
 
 - (CVPixelBufferRef)copyPixelBuffer {
