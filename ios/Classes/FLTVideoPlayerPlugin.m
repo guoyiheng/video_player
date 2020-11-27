@@ -331,7 +331,9 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
 - (void)play {
   _isPlaying = true;
   [self updatePlayingState];
-  _player.rate = _lastRate;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        self->_player.rate = self->_lastRate;
+  });
 }
 
 - (void)pause {
