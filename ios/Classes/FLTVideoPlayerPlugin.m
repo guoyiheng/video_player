@@ -347,10 +347,11 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
 //    NSLog(@"will play.  rate = %lf",_player.rate);
   _isPlaying = true;
   [self updatePlayingState];
-  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        self->_player.rate = self->_lastRate;
-//      NSLog(@"end play.  rate = %lf",_player.rate);
-  });
+//   dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+//         self->_player.rate = self->_lastRate;
+// //      NSLog(@"end play.  rate = %lf",_player.rate);
+//   });
+   _player.rate = _lastRate;
 }
 
 - (void)pause {
