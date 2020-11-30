@@ -52,6 +52,7 @@ int64_t FLTCMTimeToMillis(CMTime time) {
 - (void)setIsLooping:(bool)isLooping;
 - (void)updatePlayingState;
 @property(nonatomic,assign) float lastRate;
+@property(nonatomic,assign) NSTimeInterval lastTime;
 @end
 
 static void* playbackRate = &playbackRate;
@@ -296,22 +297,35 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
   } else if (context == playbackRate) {
       float rate = [change[NSKeyValueChangeNewKey] floatValue];
       NSLog(@"_player.rate监听值变化. rate = %lf, lastrate = %lf",_player.rate,_lastRate);
-      if (_isPlaying && _player.rate != _lastRate) {
-          dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-              self.player.rate = self.lastRate;
-          });
-//          _player.rate = _lastRate;
-      }
+//      NSTimeInterval now = CACurrentMediaTime();
+//      if (now - _lastTime < 0.1) {
+//
+//          return;
+//      }
+//      _lastTime = now;
+//      if (_isPlaying && _player.rate != _lastRate) {
+//          dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+//              self.player.rate = self.lastRate;
+//              NSLog(@"我确实设置了....%lf",self.lastRate);
+//          });
+////          _player.rate = _lastRate;
+//      }
       
   }
 }
 
 - (void)updatePlayingState {
+    NSLog(@"updatePlayingState");
   if (!_isInitialized) {
     return;
   }
   if (_isPlaying) {
-    [_player play];
+      if (!(_player.currentItem != nil && _player.rate != 0)) {
+          [_player play];
+      }
+      if (_player.rate != _lastRate) {
+          _player.rate = _lastRate;
+      }
   } else {
     [_player pause];
   }
@@ -347,11 +361,6 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
 //    NSLog(@"will play.  rate = %lf",_player.rate);
   _isPlaying = true;
   [self updatePlayingState];
-//   dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-//         self->_player.rate = self->_lastRate;
-// //      NSLog(@"end play.  rate = %lf",_player.rate);
-//   });
-   _player.rate = _lastRate;
 }
 
 - (void)pause {
