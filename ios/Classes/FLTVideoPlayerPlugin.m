@@ -320,10 +320,16 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
     return;
   }
   if (_isPlaying) {
-      if (!(_player.currentItem != nil && _player.rate != 0)) {
+      if (!(_player.rate != 0)) {
           [_player play];
       }
-      if (_player.rate != _lastRate) {
+      NSTimeInterval now = CACurrentMediaTime();
+      if (now - _lastTime < 0.1) {
+          
+          return;
+      }
+      _lastTime = now;
+      if (_lastRate != 0 && _player.rate != _lastRate) {
           _player.rate = _lastRate;
       }
   } else {
