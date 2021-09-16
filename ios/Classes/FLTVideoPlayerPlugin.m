@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,6 @@
 #if !__has_feature(objc_arc)
 #error Code Requires ARC.
 #endif
-
-int64_t FLTCMTimeToMillis(CMTime time) {
-  if (time.timescale == 0) return 0;
-  return time.value * 1000 / time.timescale;
-}
 
 @interface FLTFrameUpdater : NSObject
 @property(nonatomic) int64_t textureId;
@@ -46,7 +41,9 @@ int64_t FLTCMTimeToMillis(CMTime time) {
 @property(nonatomic, readonly) bool isPlaying;
 @property(nonatomic) bool isLooping;
 @property(nonatomic, readonly) bool isInitialized;
-- (instancetype)initWithURL:(NSURL*)url frameUpdater:(FLTFrameUpdater*)frameUpdater;
+- (instancetype)initWithURL:(NSURL*)url
+               frameUpdater:(FLTFrameUpdater*)frameUpdater
+                httpHeaders:(NSDictionary<NSString*, NSString*>*)headers;
 - (void)play;
 - (void)pause;
 - (void)setIsLooping:(bool)isLooping;
@@ -55,7 +52,6 @@ int64_t FLTCMTimeToMillis(CMTime time) {
 @property(nonatomic,assign) NSTimeInterval lastTime;
 @end
 
-static void* playbackRate = &playbackRate;
 static void* timeRangeContext = &timeRangeContext;
 static void* statusContext = &statusContext;
 static void* playbackLikelyToKeepUpContext = &playbackLikelyToKeepUpContext;
@@ -65,7 +61,7 @@ static void* playbackBufferFullContext = &playbackBufferFullContext;
 @implementation FLTVideoPlayer
 - (instancetype)initWithAsset:(NSString*)asset frameUpdater:(FLTFrameUpdater*)frameUpdater {
   NSString* path = [[NSBundle mainBundle] pathForResource:asset ofType:nil];
-  return [self initWithURL:[NSURL fileURLWithPath:path] frameUpdater:frameUpdater];
+  return [self initWithURL:[NSURL fileURLWithPath:path] frameUpdater:frameUpdater httpHeaders:nil];
 }
 
 - (void)addObservers:(AVPlayerItem*)item {
@@ -90,10 +86,6 @@ static void* playbackBufferFullContext = &playbackBufferFullContext;
             options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
             context:playbackBufferFullContext];
 
-    [_player addObserver:self
-              forKeyPath:@"rate"
-                 options:NSKeyValueObservingOptionNew
-                 context:playbackRate];
   // Add an observer that will respond to itemDidPlayToEndTime
   [[NSNotificationCenter defaultCenter] addObserver:self
                                            selector:@selector(itemDidPlayToEndTime:)
@@ -110,6 +102,16 @@ static void* playbackBufferFullContext = &playbackBufferFullContext;
       _eventSink(@{@"event" : @"completed"});
     }
   }
+}
+
+const int64_t TIME_UNSET = -9223372036854775807;
+
+static inline int64_t FLTCMTimeToMillis(CMTime time) {
+  // When CMTIME_IS_INDEFINITE return a value that matches TIME_UNSET from ExoPlayer2 on Android.
+  // Fixes https://github.com/flutter/flutter/issues/48670
+  if (CMTIME_IS_INDEFINITE(time)) return TIME_UNSET;
+  if (time.timescale == 0) return 0;
+  return time.value * 1000 / time.timescale;
 }
 
 static inline CGFloat radiansToDegrees(CGFloat radians) {
@@ -169,8 +171,15 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
   _displayLink.paused = YES;
 }
 
-- (instancetype)initWithURL:(NSURL*)url frameUpdater:(FLTFrameUpdater*)frameUpdater {
-  AVPlayerItem* item = [AVPlayerItem playerItemWithURL:url];
+- (instancetype)initWithURL:(NSURL*)url
+               frameUpdater:(FLTFrameUpdater*)frameUpdater
+                httpHeaders:(NSDictionary<NSString*, NSString*>*)headers {
+  NSDictionary<NSString*, id>* options = nil;
+  if (headers != nil && [headers count] != 0) {
+    options = @{@"AVURLAssetHTTPHeaderFieldsKey" : headers};
+  }
+  AVURLAsset* urlAsset = [AVURLAsset URLAssetWithURL:url options:options];
+  AVPlayerItem* item = [AVPlayerItem playerItemWithAsset:urlAsset];
   return [self initWithPlayerItem:item frameUpdater:frameUpdater];
 }
 
@@ -294,36 +303,18 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
     if (_eventSink != nil) {
       _eventSink(@{@"event" : @"bufferingEnd"});
     }
-  } else if (context == playbackRate) {
-      float rate = [change[NSKeyValueChangeNewKey] floatValue];
-      NSLog(@"_player.rate监听值变化. rate = %lf, lastrate = %lf",_player.rate,_lastRate);
-//      NSTimeInterval now = CACurrentMediaTime();
-//      if (now - _lastTime < 0.1) {
-//
-//          return;
-//      }
-//      _lastTime = now;
-//      if (_isPlaying && _player.rate != _lastRate) {
-//          dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-//              self.player.rate = self.lastRate;
-//              NSLog(@"我确实设置了....%lf",self.lastRate);
-//          });
-////          _player.rate = _lastRate;
-//      }
-      
   }
 }
 
 - (void)updatePlayingState {
-    NSLog(@"updatePlayingState");
   if (!_isInitialized) {
     return;
   }
   if (_isPlaying) {
-      if (!(_player.rate != 0)) {
+    if (!(_player.rate != 0)) {
           [_player play];
-      }
-      NSTimeInterval now = CACurrentMediaTime();
+    }
+    NSTimeInterval now = CACurrentMediaTime();
       if (now - _lastTime < 0.1) {
           
           return;
@@ -364,16 +355,13 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
 }
 
 - (void)play {
-//    NSLog(@"will play.  rate = %lf",_player.rate);
   _isPlaying = true;
   [self updatePlayingState];
 }
 
 - (void)pause {
-//    NSLog(@"will pause.  rate = %lf",_player.rate);
   _isPlaying = false;
   [self updatePlayingState];
-//    NSLog(@"end pause.  rate = %lf",_player.rate);
 }
 
 - (int64_t)position {
@@ -385,10 +373,10 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
 }
 
 - (void)seekTo:(int)location {
-    [_player seekToTime:CMTimeMake(location, 1000)
-        toleranceBefore:kCMTimeZero
-         toleranceAfter:kCMTimeZero
-      completionHandler:^(BOOL finished) {
+  [_player seekToTime:CMTimeMake(location, 1000)
+      toleranceBefore:kCMTimeZero
+       toleranceAfter:kCMTimeZero
+       completionHandler:^(BOOL finished) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
             if (self.isPlaying && self.player.rate != self.lastRate) {
                 self.player.rate = self.lastRate;
@@ -396,7 +384,6 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
 //            NSLog(@"seekTo  end..rate = %lf",self->_player.rate);
         });
     }];
-//    NSLog(@"seekTo  start..rate = %lf",_player.rate);
 }
 
 - (void)setIsLooping:(bool)isLooping {
@@ -427,10 +414,9 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
     }
     return;
   }
-
-    _lastRate = speed;
+  
+  _lastRate = speed;
   _player.rate = speed;
-//    NSLog(@"setPlaybackSpeed: speed = %lf",speed);
 }
 
 - (CVPixelBufferRef)copyPixelBuffer {
@@ -442,7 +428,7 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
   }
 }
 
-- (void)onTextureUnregistered {
+- (void)onTextureUnregistered:(NSObject<FlutterTexture>*)texture {
   dispatch_async(dispatch_get_main_queue(), ^{
     [self dispose];
   });
@@ -485,11 +471,6 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
                              forKeyPath:@"playbackBufferFull"
                                 context:playbackBufferFullContext];
   [_player replaceCurrentItemWithPlayerItem:nil];
-    
-    [_player removeObserver:self
-                 forKeyPath:@"rate"
-                    context:playbackRate];
-    
   [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
@@ -577,7 +558,8 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
     return [self onPlayerSetup:player frameUpdater:frameUpdater];
   } else if (input.uri) {
     player = [[FLTVideoPlayer alloc] initWithURL:[NSURL URLWithString:input.uri]
-                                    frameUpdater:frameUpdater];
+                                    frameUpdater:frameUpdater
+                                     httpHeaders:input.httpHeaders];
     return [self onPlayerSetup:player frameUpdater:frameUpdater];
   } else {
     *error = [FlutterError errorWithCode:@"video_player" message:@"not implemented" details:nil];
